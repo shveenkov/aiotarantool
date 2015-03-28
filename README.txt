@@ -13,7 +13,6 @@ Try it example:
 
     cnt = 0
 
-
     @asyncio.coroutine
     def insert_job(tnt):
         global cnt
@@ -25,7 +24,7 @@ Try it example:
     loop = asyncio.get_event_loop()
 
     tnt = aiotarantool.connect("127.0.0.1", 3301)
-    tasks = [asyncio.async(delete_job(tnt))
+    tasks = [asyncio.async(insert_job(tnt))
              for _ in range(40)]
 
     loop.run_until_complete(asyncio.wait(tasks))
