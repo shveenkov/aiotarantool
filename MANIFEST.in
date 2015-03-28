@@ -1,0 +1,5 @@
+include README.txt
+include README.rst
+include setup.py
+include aiotarantool.py
+recursive-include tests/ *.py
