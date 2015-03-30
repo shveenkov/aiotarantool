@@ -2,7 +2,11 @@ Tarantool connection driver for work with asyncio
 ----------------------------------------------------------
 Connector required tarantool version 1.6:
 
-    $ pip install gtarantool
+    $ pip install aiotarantool
+
+Also, you need to install experimental branch tarantool-python for python 3.4:
+
+    $ pip install git+https://github.com/shveenkov/tarantool-python.git@for_python3.4
 
 Try it example:
 
