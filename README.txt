@@ -39,7 +39,7 @@ See benchmark results time for insert/select/delete 100K tuples on 1.5KBytes:
 call       tarantool  aiotarantool
 =========  =========  ==========
 insert     35.938047  12.701088
-select     24.389748  18.158066
+select     24.389748  12.746204
 delete     35.224515  13.905095
 =========  =========  ==========
 
