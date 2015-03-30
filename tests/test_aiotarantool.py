@@ -40,6 +40,9 @@ tasks = [asyncio.async(delete_job(tnt))
 
 t1 = loop.time()
 loop.run_until_complete(asyncio.wait(tasks))
+
+# close tnt connection
+loop.run_until_complete(tnt.close())
 t2 = loop.time()
 
 print("total:", t2 - t1)
