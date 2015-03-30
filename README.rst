@@ -28,6 +28,7 @@ Try it example:
              for _ in range(40)]
 
     loop.run_until_complete(asyncio.wait(tasks))
+    loop.run_until_complete(tnt.close())
     loop.close()
 
 Under this scheme the aiotarantool driver makes a smaller number of read/write tarantool socket.

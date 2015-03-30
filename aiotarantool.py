@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import asyncio
 import socket
@@ -135,7 +135,6 @@ class Connection(tarantool.Connection):
                                          password=password,
                                          connect_now=connect_now)
 
-        self.cnt = 0
         self.aiobuffer_size = aiobuffer_size
         assert isinstance(self.aiobuffer_size, int)
 
@@ -150,6 +149,9 @@ class Connection(tarantool.Connection):
 
         self._waiters = dict()
         self._reader_task = None
+        self._writer_task = None
+        self._write_event = None
+        self._write_buf = None
 
         self.error = False  # important not raise exception in response reader
         self.schema = Schema(self)  # need schema with lock
@@ -168,9 +170,24 @@ class Connection(tarantool.Connection):
             self.connected = True
 
             self._reader_task = self.loop.create_task(self._response_reader())
+            self._writer_task = self.loop.create_task(self._response_writer())
+            self._write_event = asyncio.Event(loop=self.loop)
+            self._write_buf = b""
 
         if self.user and self.password:
             yield from self.authenticate(self.user, self.password)
+
+    @asyncio.coroutine
+    def _response_writer(self):
+        while True:
+            yield from self._write_event.wait()
+
+            if self._write_buf:
+                to_write = self._write_buf
+                self._write_buf = b""
+                self._writer.write(to_write)
+
+            self._write_event.clear()
 
     @asyncio.coroutine
     def _response_reader(self):
@@ -233,7 +250,9 @@ class Connection(tarantool.Connection):
             yield from self.connect()
 
         for attempt in range(RETRY_MAX_ATTEMPTS):
-            self._writer.write(bytes(request))
+            # self._writer.write(bytes(request))
+            self._write_buf += bytes(request)
+            self._write_event.set()
 
             # read response
             sync = request.sync
@@ -258,7 +277,7 @@ class Connection(tarantool.Connection):
 
     @asyncio.coroutine
     def close(self):
-        self._do_close(None)
+        yield from self._do_close(None)
 
     def _do_close(self, exc):
         if not self.connected:
@@ -269,6 +288,12 @@ class Connection(tarantool.Connection):
             self._writer.transport.close()
             self._reader_task.cancel()
             self._reader_task = None
+
+            self._writer_task.cancel()
+            self._writer_task = None
+            self._write_event = None
+            self._write_buf = None
+
             self._writer = None
             self._reader = None
 

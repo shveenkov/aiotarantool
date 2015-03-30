@@ -143,6 +143,7 @@ loop.run_until_complete(asyncio.wait(tasks))
 t2 = loop.time()
 benchmark["aiotarantool"]["delete"] = t2 - t1
 
+loop.run_until_complete(tnt.close())
 loop.close()
 
 print("\nbenchmark results:")
