@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 import asyncio
 import socket
@@ -126,6 +126,8 @@ class Schema(object):
 
 
 class Connection(tarantool.Connection):
+    DatabaseError = DatabaseError
+
     def __init__(self, host, port, user=None, password=None, connect_now=False, loop=None,
                  aiobuffer_size=16384):
         """just create instance, do not really connect by default"""
@@ -220,7 +222,7 @@ class Connection(tarantool.Connection):
 
                 sync = response.sync
                 if sync not in self._waiters:
-                    # log this shit
+                    logger.error("aio git happens: {r}", response)
                     continue
 
                 waiter = self._waiters[sync]
@@ -228,6 +230,8 @@ class Connection(tarantool.Connection):
                     waiter.set_exception(DatabaseError(response.return_code, response.return_message))
                 else:
                     waiter.set_result(response)
+
+                del self._waiters[sync]
 
             # one cut for buffer
             if curr:
@@ -249,19 +253,20 @@ class Connection(tarantool.Connection):
         if not self.connected:
             yield from self.connect()
 
+        sync = request.sync
         for attempt in range(RETRY_MAX_ATTEMPTS):
+            waiter = self._waiters[sync]
+
             # self._writer.write(bytes(request))
             self._write_buf += bytes(request)
             self._write_event.set()
 
             # read response
-            sync = request.sync
-            response = yield from self._waiters[sync]
-            del self._waiters[sync]
-
+            response = yield from waiter
             if response.completion_status != 1:
                 return response
 
+            self._waiters[sync] = asyncio.Future(loop=self.loop)
             warn(response.return_message, RetryWarning)
 
         # Raise an error if the maximum number of attempts have been made
