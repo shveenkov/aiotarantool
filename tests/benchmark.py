@@ -5,7 +5,7 @@ import tarantool
 
 benchmark = {
     "tarantool": {},
-    "aiotarantool": {},
+    "tornado": {},
 }
 
 cnt = 0
@@ -54,99 +54,107 @@ for it in range(100000):
 t2 = time.time()
 benchmark["tarantool"]["delete"] = t2 - t1
 
-# gevent benchmark
-import asyncio
-import aiotarantool
+# tornado benchmark
+from tornado.ioloop import IOLoop
+import tornado.gen
+import tarantool.tornado
 
 
-@asyncio.coroutine
+@tornado.gen.coroutine
 def insert_job(tnt):
     global cnt
 
-    for i in range(2500):
+    for it in range(2500):
         cnt += 1
-        yield from tnt.insert("tester", (cnt, data[cnt % mod_len]))
+        r = yield tnt.insert("tester", (cnt, data[it % mod_len]))
 
 
-@asyncio.coroutine
+@tornado.gen.coroutine
 def select_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.select("tester", cnt)
+        r = yield tnt.select("tester", cnt)
 
 
-@asyncio.coroutine
+@tornado.gen.coroutine
 def update_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.update("tester", cnt, [("=", 2, cnt)])
+        r = yield tnt.update("tester", cnt, [("=", 2, cnt)])
 
 
-@asyncio.coroutine
+@tornado.gen.coroutine
 def delete_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.delete("tester", cnt)
+        r = yield tnt.delete("tester", cnt)
 
 
-loop = asyncio.get_event_loop()
+loop = IOLoop.current()
+tnt = tarantool.tornado.connect("127.0.0.1", 3301)
 
-tnt = aiotarantool.connect("127.0.0.1", 3301)
+
+@tornado.gen.coroutine
+def runner1():
+    # create tnt instance, not real connect
+    yield [insert_job(tnt) for n in range(40)]
+
+@tornado.gen.coroutine
+def runner2():
+    # create tnt instance, not real connect
+    yield [select_job(tnt) for n in range(40)]
+
+@tornado.gen.coroutine
+def runner3():
+    # create tnt instance, not real connect
+    yield [update_job(tnt) for n in range(40)]
+
+@tornado.gen.coroutine
+def runner4():
+    # create tnt instance, not real connect
+    yield [delete_job(tnt) for n in range(40)]
 
 # insert test
-print("aiotarantool insert test")
+print("tornado insert test")
 t1 = loop.time()
 cnt = 0
-tasks = [asyncio.async(insert_job(tnt))
-         for _ in range(40)]
-
-loop.run_until_complete(asyncio.wait(tasks))
+loop.run_sync(runner1)
 t2 = loop.time()
-benchmark["aiotarantool"]["insert"] = t2 - t1
+benchmark["tornado"]["insert"] = t2 - t1
 
 # select test
-print("aiotarantool select test")
+print("tornado select test")
 t1 = loop.time()
 cnt = 0
-tasks = [asyncio.async(select_job(tnt))
-         for _ in range(40)]
-
-loop.run_until_complete(asyncio.wait(tasks))
+loop.run_sync(runner2)
 t2 = loop.time()
-benchmark["aiotarantool"]["select"] = t2 - t1
+benchmark["tornado"]["select"] = t2 - t1
 
 # update test
-print("aiotarantool update test")
+print("tornado update test")
 t1 = loop.time()
 cnt = 0
-tasks = [asyncio.async(update_job(tnt))
-         for _ in range(40)]
-
-loop.run_until_complete(asyncio.wait(tasks))
+loop.run_sync(runner3)
 t2 = loop.time()
-benchmark["aiotarantool"]["update"] = t2 - t1
+benchmark["tornado"]["update"] = t2 - t1
 
 # delete test
-print("aiotarantool delete test")
+print("tornado delete test")
 t1 = loop.time()
 cnt = 0
-tasks = [asyncio.async(delete_job(tnt))
-         for _ in range(40)]
-
-loop.run_until_complete(asyncio.wait(tasks))
+loop.run_sync(runner4)
 t2 = loop.time()
-benchmark["aiotarantool"]["delete"] = t2 - t1
+benchmark["tornado"]["delete"] = t2 - t1
 
-loop.run_until_complete(tnt.close())
 loop.close()
 
 print("\nbenchmark results:")
-print("call    tarantool  aiotarantool")
+print("call    tarantool  tarantool.tornado")
 for k in ("insert", "select", "update", "delete"):
-    print("{2:6}: {0:0.6f}  {1:0.6f}".format(benchmark["tarantool"][k], benchmark["aiotarantool"][k], k))
+    print("{2:6}: {0:0.6f}  {1:0.6f}".format(benchmark["tarantool"][k], benchmark["tornado"][k], k))
