@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 import asyncio
 import socket
@@ -154,6 +154,8 @@ class Connection(tarantool.Connection):
         self._writer_task = None
         self._write_event = None
         self._write_buf = None
+        self._auth_event = None
+        self._salt = None
 
         self.error = False  # important not raise exception in response reader
         self.schema = Schema(self)  # need schema with lock
@@ -176,7 +178,10 @@ class Connection(tarantool.Connection):
             self._write_event = asyncio.Event(loop=self.loop)
             self._write_buf = b""
 
+            self._auth_event = asyncio.Event(loop=self.loop)
+
         if self.user and self.password:
+            yield from self._auth_event.wait()
             yield from self.authenticate(self.user, self.password)
 
     @asyncio.coroutine
@@ -196,6 +201,7 @@ class Connection(tarantool.Connection):
         # handshake
         greeting = yield from self._reader.read(IPROTO_GREETING_SIZE)
         self._salt = base64.decodestring(greeting[64:])[:20]
+        self._auth_event.set()
 
         buf = b""
         while not self._reader.at_eof():
@@ -301,6 +307,8 @@ class Connection(tarantool.Connection):
 
             self._writer = None
             self._reader = None
+
+            self._auth_event = None
 
             for waiter in self._waiters.values():
                 if exc is None:
