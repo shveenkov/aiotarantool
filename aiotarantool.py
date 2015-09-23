@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 
 import asyncio
 import socket
@@ -39,7 +39,8 @@ from tarantool.const import (
     REQUEST_TYPE_OK,
     REQUEST_TYPE_ERROR,
     RETRY_MAX_ATTEMPTS,
-    IPROTO_GREETING_SIZE)
+    IPROTO_GREETING_SIZE,
+    ENCODING_DEFAULT)
 
 
 import logging
@@ -47,8 +48,8 @@ import logging
 logger = logging.getLogger(__package__)
 
 
-def connect(host, post, user=None, password=None, loop=None):
-    conn = Connection(host, post, user=user, password=password, loop=loop)
+def connect(host, post, user=None, password=None, loop=None, encoding=ENCODING_DEFAULT):
+    conn = Connection(host, post, user=user, password=password, loop=loop, encoding=encoding)
 
     return conn
 
@@ -129,13 +130,14 @@ class Connection(tarantool.Connection):
     DatabaseError = DatabaseError
 
     def __init__(self, host, port, user=None, password=None, connect_now=False, loop=None,
-                 aiobuffer_size=16384):
+                 encoding=ENCODING_DEFAULT, aiobuffer_size=16384):
         """just create instance, do not really connect by default"""
 
-        super(Connection, self).__init__(host, port,
-                                         user=user,
-                                         password=password,
-                                         connect_now=connect_now)
+        super().__init__(host, port,
+                         user=user,
+                         password=password,
+                         connect_now=connect_now,
+                         encoding=encoding)
 
         self.aiobuffer_size = aiobuffer_size
         assert isinstance(self.aiobuffer_size, int)
