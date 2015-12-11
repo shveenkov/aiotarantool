@@ -4,9 +4,9 @@ Connector required tarantool version 1.6:
 
     $ pip install aiotarantool
 
-Also, you need to install experimental branch tarantool-python for python 3.4:
+Also, you need to install tarantool-python for python 3 from github:
 
-    $ pip install git+https://github.com/shveenkov/tarantool-python.git@for_python3.4
+    $ pip install git+https://github.com/tarantool/tarantool-python.git@master
 
 Try it example:
 

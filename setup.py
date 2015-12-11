@@ -28,9 +28,9 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Database :: Front-Ends"
     ],
-    # install_requires=[
-    #     "tarantool>=0.5.1",
-    # ],
+    install_requires=[
+        "tarantool>=0.5.1",
+    ],
     description="Tarantool connection driver for work with asyncio",
     long_description=open("README.rst").read()
 )
