@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.0.6"
+__version__ = "1.0.7"
 
 import asyncio
 import socket
@@ -248,10 +248,11 @@ class Connection(tarantool.Connection):
                     continue
 
                 waiter = self._waiters[sync]
-                if response.return_code != 0:
-                    waiter.set_exception(DatabaseError(response.return_code, response.return_message))
-                else:
-                    waiter.set_result(response)
+                if not waiter.cancelled():
+                    if response.return_code != 0:
+                        waiter.set_exception(DatabaseError(response.return_code, response.return_message))
+                    else:
+                        waiter.set_result(response)
 
                 del self._waiters[sync]
 
