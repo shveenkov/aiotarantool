@@ -164,28 +164,35 @@ class Connection(tarantool.Connection):
         self.schema = Schema(self)  # need schema with lock
 
     @asyncio.coroutine
-    def connect(self, auth=True):
-        if not self.connected:
-            with (yield from self.lock):
-                if self.connected:
-                    return
-                self._connected_event.clear()
+    def connect(self):
+        if self.connected:
+            return
+        
+        with (yield from self.lock):
+            if self.connected:
+                return
+            self._connected_event.clear()
+
+            yield from self._do_connect()
+            
+            self.connected = True
+            self._connected_event.set()
+            
+    @asyncio.coroutine
+    def _do_connect(self):
+        logger.log(logging.DEBUG, "connecting to %r" % self)
+        self._reader, self._writer = yield from asyncio.open_connection(self.host, self.port, loop=self.loop)
     
-                logger.log(logging.DEBUG, "connecting to %r" % self)
-                self._reader, self._writer = yield from asyncio.open_connection(self.host, self.port, loop=self.loop)
-                self.connected = True
+        self._reader_task = self.loop.create_task(self._response_reader())
+        self._writer_task = self.loop.create_task(self._response_writer())
+        self._write_event = asyncio.Event(loop=self.loop)
+        self._write_buf = b""
     
-                self._reader_task = self.loop.create_task(self._response_reader())
-                self._writer_task = self.loop.create_task(self._response_writer())
-                self._write_event = asyncio.Event(loop=self.loop)
-                self._write_buf = b""
+        self._greeting_event = asyncio.Event(loop=self.loop)
     
-                self._greeting_event = asyncio.Event(loop=self.loop)
-                
-        if auth and self.user and self.password:
+        if self.user and self.password:
             yield from self._greeting_event.wait()
             yield from self._authenticate(self.user, self.password)
-        self._connected_event.set()
     
     @asyncio.coroutine
     def wait_connected(self):
@@ -365,16 +372,20 @@ class Connection(tarantool.Connection):
     def authenticate(self, user, password):
         self.user = user
         self.password = password
-
-        if not self.connected:
-            yield from self.connect(auth=False)
-        yield from self._connected_event.wait()
         
-        yield from self._authenticate(user, password)
+        if not self.connected:
+            yield from self.connect()  # connects and authorizes
+            return
+        else:  # need only to authenticate
+            self._connected_event.clear()
+            yield from self._authenticate(user, password)
+            self.connected = True
+            self._connected_event.set()
 
     @asyncio.coroutine
     def _authenticate(self, user, password):
-        resp = yield from self._send_request_no_wait(RequestAuthenticate(self, self._salt, self.user, self.password))
+        assert self._salt, 'Server salt hasn\'t been received.'
+        resp = yield from self._send_request_no_wait(RequestAuthenticate(self, self._salt, user, password))
         return resp
 
     @asyncio.coroutine
