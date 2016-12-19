@@ -156,35 +156,42 @@ class Connection(tarantool.Connection):
         self._writer_task = None
         self._write_event = None
         self._write_buf = None
-        self._auth_event = None
+        self._greeting_event = None
+        self._connected_event = asyncio.Event(loop=self.loop)
         self._salt = None
 
         self.error = False  # important not raise exception in response reader
         self.schema = Schema(self)  # need schema with lock
 
     @asyncio.coroutine
-    def connect(self):
-        if self.connected:
-            return
-
-        with (yield from self.lock):
-            if self.connected:
-                return
-
-            logger.log(logging.DEBUG, "connecting to %r" % self)
-            self._reader, self._writer = yield from asyncio.open_connection(self.host, self.port, loop=self.loop)
-            self.connected = True
-
-            self._reader_task = self.loop.create_task(self._response_reader())
-            self._writer_task = self.loop.create_task(self._response_writer())
-            self._write_event = asyncio.Event(loop=self.loop)
-            self._write_buf = b""
-
-            self._auth_event = asyncio.Event(loop=self.loop)
-
-        if self.user and self.password:
-            yield from self._auth_event.wait()
-            yield from self.authenticate(self.user, self.password)
+    def connect(self, auth=True):
+        if not self.connected:
+            with (yield from self.lock):
+                if self.connected:
+                    return
+                self._connected_event.clear()
+    
+                logger.log(logging.DEBUG, "connecting to %r" % self)
+                self._reader, self._writer = yield from asyncio.open_connection(self.host, self.port, loop=self.loop)
+                self.connected = True
+    
+                self._reader_task = self.loop.create_task(self._response_reader())
+                self._writer_task = self.loop.create_task(self._response_writer())
+                self._write_event = asyncio.Event(loop=self.loop)
+                self._write_buf = b""
+    
+                self._greeting_event = asyncio.Event(loop=self.loop)
+                
+        if auth and self.user and self.password:
+            yield from self._greeting_event.wait()
+            yield from self._authenticate(self.user, self.password)
+        self._connected_event.set()
+    
+    @asyncio.coroutine
+    def wait_connected(self):
+        if not self.connected:
+            yield from self.connect()
+        yield from self._connected_event.wait()
 
     @asyncio.coroutine
     def _response_writer(self):
@@ -203,7 +210,7 @@ class Connection(tarantool.Connection):
         # handshake
         greeting = yield from self._reader.read(IPROTO_GREETING_SIZE)
         self._salt = base64.decodestring(greeting[64:])[:20]
-        self._auth_event.set()
+        self._greeting_event.set()
 
         buf = b""
         while not self._reader.at_eof():
@@ -232,13 +239,12 @@ class Connection(tarantool.Connection):
                 if sync not in self._waiters:
                     logger.error("aio git happens: {r}", response)
                     continue
-                
+
                 waiter = self._waiters[sync]
-                if not waiter.cancelled():
-                    if response.return_code != 0:
-                        waiter.set_exception(DatabaseError(response.return_code, response.return_message))
-                    else:
-                        waiter.set_result(response)
+                if response.return_code != 0:
+                    waiter.set_exception(DatabaseError(response.return_code, response.return_message))
+                else:
+                    waiter.set_result(response)
 
                 del self._waiters[sync]
 
@@ -259,25 +265,27 @@ class Connection(tarantool.Connection):
     def _send_request(self, request):
         assert isinstance(request, Request)
 
-        if not self.connected:
-            yield from self.connect()
+        yield from self.wait_connected()
+        return (yield from self._send_request_no_wait(request))
 
+    @asyncio.coroutine
+    def _send_request_no_wait(self, request):
         sync = request.sync
         for attempt in range(RETRY_MAX_ATTEMPTS):
             waiter = self._waiters[sync]
-
+        
             # self._writer.write(bytes(request))
             self._write_buf += bytes(request)
             self._write_event.set()
-
+        
             # read response
             response = yield from waiter
             if response.completion_status != 1:
                 return response
-
+        
             self._waiters[sync] = asyncio.Future(loop=self.loop)
             warn(response.return_message, RetryWarning)
-
+    
         # Raise an error if the maximum number of attempts have been made
         raise DatabaseError(response.return_code, response.return_message)
 
@@ -311,7 +319,7 @@ class Connection(tarantool.Connection):
             self._writer = None
             self._reader = None
 
-            self._auth_event = None
+            self._greeting_event = None
 
             for waiter in self._waiters.values():
                 if exc is None:
@@ -359,9 +367,14 @@ class Connection(tarantool.Connection):
         self.password = password
 
         if not self.connected:
-            yield from self.connect()
+            yield from self.connect(auth=False)
+        yield from self._connected_event.wait()
+        
+        yield from self._authenticate(user, password)
 
-        resp = yield from self._send_request(RequestAuthenticate(self, self._salt, self.user, self.password))
+    @asyncio.coroutine
+    def _authenticate(self, user, password):
+        resp = yield from self._send_request_no_wait(RequestAuthenticate(self, self._salt, self.user, self.password))
         return resp
 
     @asyncio.coroutine
