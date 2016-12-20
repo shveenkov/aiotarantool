@@ -157,7 +157,6 @@ class Connection(tarantool.Connection):
         self._write_event = None
         self._write_buf = None
         self._greeting_event = None
-        self._connected_event = asyncio.Event(loop=self.loop)
         self._salt = None
 
         self.error = False  # important not raise exception in response reader
@@ -171,12 +170,10 @@ class Connection(tarantool.Connection):
         with (yield from self.lock):
             if self.connected:
                 return
-            self._connected_event.clear()
 
             yield from self._do_connect()
             
             self.connected = True
-            self._connected_event.set()
             
     @asyncio.coroutine
     def _do_connect(self):
@@ -193,12 +190,6 @@ class Connection(tarantool.Connection):
         if self.user and self.password:
             yield from self._greeting_event.wait()
             yield from self._authenticate(self.user, self.password)
-    
-    @asyncio.coroutine
-    def wait_connected(self):
-        if not self.connected:
-            yield from self.connect()
-        yield from self._connected_event.wait()
 
     @asyncio.coroutine
     def _response_writer(self):
@@ -273,7 +264,8 @@ class Connection(tarantool.Connection):
     def _send_request(self, request):
         assert isinstance(request, Request)
 
-        yield from self.wait_connected()
+        if not self.connected:
+            yield from self.connect()
         return (yield from self._send_request_no_wait(request))
 
     @asyncio.coroutine
@@ -378,10 +370,8 @@ class Connection(tarantool.Connection):
             yield from self.connect()  # connects and authorizes
             return
         else:  # need only to authenticate
-            self._connected_event.clear()
             yield from self._authenticate(user, password)
             self.connected = True
-            self._connected_event.set()
 
     @asyncio.coroutine
     def _authenticate(self, user, password):
