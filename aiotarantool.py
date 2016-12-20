@@ -266,10 +266,10 @@ class Connection(tarantool.Connection):
 
         if not self.connected:
             yield from self.connect()
-        return (yield from self._send_request_no_wait(request))
+        return (yield from self._send_request_no_check_connected(request))
 
     @asyncio.coroutine
-    def _send_request_no_wait(self, request):
+    def _send_request_no_check_connected(self, request):
         sync = request.sync
         for attempt in range(RETRY_MAX_ATTEMPTS):
             waiter = self._waiters[sync]
@@ -371,12 +371,11 @@ class Connection(tarantool.Connection):
             return
         else:  # need only to authenticate
             yield from self._authenticate(user, password)
-            self.connected = True
 
     @asyncio.coroutine
     def _authenticate(self, user, password):
         assert self._salt, 'Server salt hasn\'t been received.'
-        resp = yield from self._send_request_no_wait(RequestAuthenticate(self, self._salt, user, password))
+        resp = yield from self._send_request_no_check_connected(RequestAuthenticate(self, self._salt, user, password))
         return resp
 
     @asyncio.coroutine
