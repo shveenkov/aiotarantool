@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 
 import asyncio
 import socket
@@ -22,6 +22,7 @@ from tarantool.request import (
     RequestSelect,
     RequestSubscribe,
     RequestUpdate,
+    RequestUpsert,
     RequestAuthenticate)
 
 from tarantool.schema import SchemaIndex, SchemaSpace
@@ -450,6 +451,22 @@ class Connection(tarantool.Connection):
 
         res = await self._send_request(
             RequestUpdate(self, space_name, index_name, key, op_list))
+
+        return res
+
+    async def upsert(self, space_name, tuple_value, op_list, **kwargs):
+        index_name = kwargs.get("index", 0)
+
+        if isinstance(space_name, str):
+            sp = await self.schema.get_space(space_name)
+            space_name = sp.sid
+
+        if isinstance(index_name, str):
+            idx = await self.schema.get_index(space_name, index_name)
+            index_name = idx.iid
+
+        res = await self._send_request(
+            RequestUpsert(self, space_name, index_name, tuple_value, op_list))
 
         return res
 
