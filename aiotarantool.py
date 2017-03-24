@@ -48,8 +48,8 @@ import logging
 logger = logging.getLogger(__package__)
 
 
-def connect(host, post, user=None, password=None, loop=None, encoding=ENCODING_DEFAULT):
-    conn = Connection(host, post, user=user, password=password, loop=loop, encoding=encoding)
+def connect(host, port, user=None, password=None, loop=None, encoding=ENCODING_DEFAULT):
+    conn = Connection(host, port, user=user, password=password, loop=loop, encoding=encoding)
 
     return conn
 
