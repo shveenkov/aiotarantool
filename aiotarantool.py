@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.0.8"
+__version__ = "1.1.0"
 
 import asyncio
 import socket
@@ -58,18 +58,17 @@ class Schema(object):
     def __init__(self, con):
         self.schema = {}
         self.con = con
-
-    @asyncio.coroutine
-    def get_space(self, space):
+    
+    async def get_space(self, space):
         try:
             return self.schema[space]
         except KeyError:
             pass
 
         if not self.con.connected:
-            yield from self.con.connect()
+            await self.con.connect()
 
-        with (yield from self.con.lock):
+        with (await self.con.lock):
             if space in self.schema:
                 return self.schema[space]
 
@@ -77,7 +76,7 @@ class Schema(object):
                       if isinstance(space, str)
                       else tarantool.const.INDEX_SPACE_PRIMARY)
 
-            array = yield from self.con.select(tarantool.const.SPACE_SPACE, space, index=_index)
+            array = await self.con.select(tarantool.const.SPACE_SPACE, space, index=_index)
             if len(array) > 1:
                 raise SchemaError('Some strange output from server: \n' + array)
 
@@ -88,19 +87,18 @@ class Schema(object):
 
             array = array[0]
             return SchemaSpace(array, self.schema)
-
-    @asyncio.coroutine
-    def get_index(self, space, index):
-        _space = yield from self.get_space(space)
+    
+    async def get_index(self, space, index):
+        _space = await self.get_space(space)
         try:
             return _space.indexes[index]
         except KeyError:
             pass
 
         if not self.con.connected:
-            yield from self.con.connect()
+            await self.con.connect()
 
-        with (yield from self.con.lock):
+        with (await self.con.lock):
             if index in _space.indexes:
                 return _space.indexes[index]
 
@@ -108,7 +106,7 @@ class Schema(object):
                       if isinstance(index, str)
                       else tarantool.const.INDEX_INDEX_PRIMARY)
 
-            array = yield from self.con.select(tarantool.const.SPACE_INDEX, [_space.sid, index], index=_index)
+            array = await self.con.select(tarantool.const.SPACE_INDEX, [_space.sid, index], index=_index)
 
             if len(array) > 1:
                 raise SchemaError('Some strange output from server: \n' + array)
@@ -161,24 +159,22 @@ class Connection(tarantool.Connection):
 
         self.error = False  # important not raise exception in response reader
         self.schema = Schema(self)  # need schema with lock
-
-    @asyncio.coroutine
-    def connect(self):
+    
+    async def connect(self):
         if self.connected:
             return
         
-        with (yield from self.lock):
+        with (await self.lock):
             if self.connected:
                 return
 
-            yield from self._do_connect()
+            await self._do_connect()
             
             self.connected = True
-            
-    @asyncio.coroutine
-    def _do_connect(self):
+    
+    async def _do_connect(self):
         logger.log(logging.DEBUG, "connecting to %r" % self)
-        self._reader, self._writer = yield from asyncio.open_connection(self.host, self.port, loop=self.loop)
+        self._reader, self._writer = await asyncio.open_connection(self.host, self.port, loop=self.loop)
     
         self._reader_task = self.loop.create_task(self._response_reader())
         self._writer_task = self.loop.create_task(self._response_writer())
@@ -188,33 +184,31 @@ class Connection(tarantool.Connection):
         self._greeting_event = asyncio.Event(loop=self.loop)
     
         if self.user and self.password:
-            yield from self._greeting_event.wait()
-            yield from self._authenticate(self.user, self.password)
-
-    @asyncio.coroutine
-    def _response_writer(self):
+            await self._greeting_event.wait()
+            await self._authenticate(self.user, self.password)
+    
+    async def _response_writer(self):
         while True:
-            yield from self._write_event.wait()
-
+            await self._write_event.wait()
+            
             if self._write_buf:
                 to_write = self._write_buf
                 self._write_buf = b""
                 self._writer.write(to_write)
-
+            
             self._write_event.clear()
-
-    @asyncio.coroutine
-    def _response_reader(self):
+    
+    async def _response_reader(self):
         # handshake
-        greeting = yield from self._reader.read(IPROTO_GREETING_SIZE)
+        greeting = await self._reader.read(IPROTO_GREETING_SIZE)
         self._salt = base64.decodestring(greeting[64:])[:20]
         self._greeting_event.set()
 
         buf = b""
         while not self._reader.at_eof():
-            tmp_buf = yield from self._reader.read(self.aiobuffer_size)
+            tmp_buf = await self._reader.read(self.aiobuffer_size)
             if not tmp_buf:
-                yield from self._do_close(
+                await self._do_close(
                     NetworkError(socket.error(errno.ECONNRESET, "Lost connection to server during query")))
 
             buf += tmp_buf
@@ -251,25 +245,22 @@ class Connection(tarantool.Connection):
             if curr:
                 buf = buf[curr:]
 
-        yield from self._do_close(None)
-
-    @asyncio.coroutine
-    def _wait_response(self, sync):
-        resp = yield from self._waiters[sync]
+        await self._do_close(None)
+    
+    async def _wait_response(self, sync):
+        resp = await self._waiters[sync]
         # renew request waiter
         self._waiters[sync] = asyncio.Future(loop=self.loop)
         return resp
-
-    @asyncio.coroutine
-    def _send_request(self, request):
+    
+    async def _send_request(self, request):
         assert isinstance(request, Request)
 
         if not self.connected:
-            yield from self.connect()
-        return (yield from self._send_request_no_check_connected(request))
-
-    @asyncio.coroutine
-    def _send_request_no_check_connected(self, request):
+            await self.connect()
+        return (await self._send_request_no_check_connected(request))
+    
+    async def _send_request_no_check_connected(self, request):
         sync = request.sync
         for attempt in range(RETRY_MAX_ATTEMPTS):
             waiter = self._waiters[sync]
@@ -279,7 +270,7 @@ class Connection(tarantool.Connection):
             self._write_event.set()
         
             # read response
-            response = yield from waiter
+            response = await waiter
             if response.completion_status != 1:
                 return response
         
@@ -293,19 +284,18 @@ class Connection(tarantool.Connection):
         self.req_num += 1
         if self.req_num > 10000000:
             self.req_num = 0
-
+        
         self._waiters[self.req_num] = asyncio.Future(loop=self.loop)
         return self.req_num
-
-    @asyncio.coroutine
-    def close(self):
-        yield from self._do_close(None)
-
+    
+    async def close(self):
+        await self._do_close(None)
+    
     def _do_close(self, exc):
         if not self.connected:
             return
 
-        with (yield from self.lock):
+        with (await self.lock):
             self.connected = False
             self._writer.transport.close()
             self._reader_task.cancel()
@@ -326,98 +316,89 @@ class Connection(tarantool.Connection):
                     waiter.cancel()
                 else:
                     waiter.set_exception(exc)
-
+            
             self._waiters = dict()
-
+    
     def __repr__(self):
         return "aiotarantool.Connection(host=%r, port=%r)" % (self.host, self.port)
-
-    @asyncio.coroutine
-    def call(self, func_name, *args):
+    
+    async def call(self, func_name, *args):
         assert isinstance(func_name, str)
 
         if len(args) == 1 and isinstance(args[0], (list, tuple)):
             args = args[0]
 
-        resp = yield from self._send_request(RequestCall(self, func_name, args))
+        resp = await self._send_request(RequestCall(self, func_name, args))
         return resp
-
-    @asyncio.coroutine
-    def eval(self, expr, *args):
+    
+    async def eval(self, expr, *args):
         assert isinstance(expr, str)
 
         if len(args) == 1 and isinstance(args[0], (list, tuple)):
             args = args[0]
 
-        resp = yield from self._send_request(RequestEval(self, expr, args))
+        resp = await self._send_request(RequestEval(self, expr, args))
         return resp
-
-    @asyncio.coroutine
-    def replace(self, space_name, values):
+    
+    async def replace(self, space_name, values):
         if isinstance(space_name, str):
-            sp = yield from self.schema.get_space(space_name)
+            sp = await self.schema.get_space(space_name)
             space_name = sp.sid
 
-        resp = yield from self._send_request(RequestReplace(self, space_name, values))
+        resp = await self._send_request(RequestReplace(self, space_name, values))
         return resp
-
-    @asyncio.coroutine
-    def authenticate(self, user, password):
+    
+    async def authenticate(self, user, password):
         self.user = user
         self.password = password
         
         if not self.connected:
-            yield from self.connect()  # connects and authorizes
+            await self.connect()  # connects and authorizes
             return
         else:  # need only to authenticate
-            yield from self._authenticate(user, password)
-
-    @asyncio.coroutine
-    def _authenticate(self, user, password):
+            await self._authenticate(user, password)
+    
+    async def _authenticate(self, user, password):
         assert self._salt, 'Server salt hasn\'t been received.'
-        resp = yield from self._send_request_no_check_connected(RequestAuthenticate(self, self._salt, user, password))
+        resp = await self._send_request_no_check_connected(RequestAuthenticate(self, self._salt, user, password))
         return resp
-
-    @asyncio.coroutine
-    def join(self, server_uuid):
+    
+    async def join(self, server_uuid):
         request = RequestJoin(self, server_uuid)
-        resp = yield from self._send_request(request)
+        resp = await self._send_request(request)
         while True:
             yield resp
             if resp.code == REQUEST_TYPE_OK or resp.code >= REQUEST_TYPE_ERROR:
                 return
 
-            resp = yield from self._wait_response(request.sync)
+            resp = await self._wait_response(request.sync)
 
         # close connection after JOIN
-        yield from self.close()
-
-    @asyncio.coroutine
-    def subscribe(self, cluster_uuid, server_uuid, vclock=None):
+        await self.close()
+    
+    async def subscribe(self, cluster_uuid, server_uuid, vclock=None):
         vclock = vclock or dict()
         request = RequestSubscribe(self, cluster_uuid, server_uuid, vclock)
-        resp = yield from self._send_request(request)
+        resp = await self._send_request(request)
         while True:
             yield resp
             if resp.code >= REQUEST_TYPE_ERROR:
                 return
 
-            resp = yield from self._wait_response(request.sync)
+            resp = await self._wait_response(request.sync)
 
         # close connection after SUBSCRIBE
-        yield from self.close()
-
-    @asyncio.coroutine
-    def insert(self, space_name, values):
+        await self.close()
+    
+    async def insert(self, space_name, values):
         if isinstance(space_name, str):
-            sp = yield from self.schema.get_space(space_name)
+            sp = await self.schema.get_space(space_name)
             space_name = sp.sid
 
-        res = yield from self._send_request(RequestInsert(self, space_name, values))
+        res = await self._send_request(RequestInsert(self, space_name, values))
         return res
-
-    @asyncio.coroutine
-    def select(self, space_name, key=None, **kwargs):
+    
+    async def select(self, space_name, key=None, **kwargs):
         offset = kwargs.get("offset", 0)
         limit = kwargs.get("limit", 0xffffffff)
         index_name = kwargs.get("index", 0)
@@ -426,63 +407,59 @@ class Connection(tarantool.Connection):
         key = check_key(key, select=True)
 
         if isinstance(space_name, str):
-            sp = yield from self.schema.get_space(space_name)
+            sp = await self.schema.get_space(space_name)
             space_name = sp.sid
 
         if isinstance(index_name, str):
-            idx = yield from self.schema.get_index(space_name, index_name)
+            idx = await self.schema.get_index(space_name, index_name)
             index_name = idx.iid
 
-        res = yield from self._send_request(
+        res = await self._send_request(
             RequestSelect(self, space_name, index_name, key, offset, limit, iterator_type))
-
+        
         return res
-
-    @asyncio.coroutine
-    def delete(self, space_name, key, **kwargs):
+    
+    async def delete(self, space_name, key, **kwargs):
         index_name = kwargs.get("index", 0)
 
         key = check_key(key)
         if isinstance(space_name, str):
-            sp = yield from self.schema.get_space(space_name)
+            sp = await self.schema.get_space(space_name)
             space_name = sp.sid
 
         if isinstance(index_name, str):
-            idx = yield from self.schema.get_index(space_name, index_name)
+            idx = await self.schema.get_index(space_name, index_name)
             index_name = idx.iid
 
-        res = yield from self._send_request(
+        res = await self._send_request(
             RequestDelete(self, space_name, index_name, key))
 
         return res
-
-    @asyncio.coroutine
-    def update(self, space_name, key, op_list, **kwargs):
+    
+    async def update(self, space_name, key, op_list, **kwargs):
         index_name = kwargs.get("index", 0)
-
+        
         key = check_key(key)
         if isinstance(space_name, str):
-            sp = yield from self.schema.get_space(space_name)
+            sp = await self.schema.get_space(space_name)
             space_name = sp.sid
-
+        
         if isinstance(index_name, str):
-            idx = yield from self.schema.get_index(space_name, index_name)
+            idx = await self.schema.get_index(space_name, index_name)
             index_name = idx.iid
-
-        res = yield from self._send_request(
+        
+        res = await self._send_request(
             RequestUpdate(self, space_name, index_name, key, op_list))
-
+        
         return res
-
-    @asyncio.coroutine
-    def ping(self, notime=False):
+    
+    async def ping(self, notime=False):
         request = RequestPing(self)
         t0 = self.loop.time()
-        yield from self._send_request(request)
+        await self._send_request(request)
         t1 = self.loop.time()
-
+        
         if notime:
             return "Success"
-
+        
         return t1 - t0
-
