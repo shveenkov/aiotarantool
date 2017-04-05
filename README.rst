@@ -4,10 +4,6 @@ Connector required tarantool version 1.6:
 
     $ pip install aiotarantool
 
-Also, you need to install tarantool-python for python 3 from github:
-
-    $ pip install git+https://github.com/tarantool/tarantool-python.git@master
-
 Try it example:
 
 .. code:: python
@@ -17,18 +13,17 @@ Try it example:
 
     cnt = 0
 
-    @asyncio.coroutine
-    def insert_job(tnt):
+    async def insert_job(tnt):
         global cnt
 
         for it in range(2500):
             cnt += 1
-            r = yield from tnt.insert("tester", (cnt, cnt))
+            r = await tnt.insert("tester", (cnt, cnt))
 
     loop = asyncio.get_event_loop()
 
     tnt = aiotarantool.connect("127.0.0.1", 3301)
-    tasks = [asyncio.async(insert_job(tnt))
+    tasks = [loop.create_task(insert_job(tnt))
              for _ in range(40)]
 
     loop.run_until_complete(asyncio.wait(tasks))
