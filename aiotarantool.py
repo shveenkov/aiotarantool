@@ -58,7 +58,7 @@ class Schema(object):
     def __init__(self, con):
         self.schema = {}
         self.con = con
-    
+
     async def get_space(self, space):
         try:
             return self.schema[space]
@@ -87,7 +87,7 @@ class Schema(object):
 
             array = array[0]
             return SchemaSpace(array, self.schema)
-    
+
     async def get_index(self, space, index):
         _space = await self.get_space(space)
         try:
@@ -159,45 +159,45 @@ class Connection(tarantool.Connection):
 
         self.error = False  # important not raise exception in response reader
         self.schema = Schema(self)  # need schema with lock
-    
+
     async def connect(self):
         if self.connected:
             return
-        
+
         with (await self.lock):
             if self.connected:
                 return
 
             await self._do_connect()
-            
+
             self.connected = True
-    
+
     async def _do_connect(self):
         logger.log(logging.DEBUG, "connecting to %r" % self)
         self._reader, self._writer = await asyncio.open_connection(self.host, self.port, loop=self.loop)
-    
+
         self._reader_task = self.loop.create_task(self._response_reader())
         self._writer_task = self.loop.create_task(self._response_writer())
         self._write_event = asyncio.Event(loop=self.loop)
         self._write_buf = b""
-    
+
         self._greeting_event = asyncio.Event(loop=self.loop)
-    
+
         if self.user and self.password:
             await self._greeting_event.wait()
             await self._authenticate(self.user, self.password)
-    
+
     async def _response_writer(self):
         while True:
             await self._write_event.wait()
-            
+
             if self._write_buf:
                 to_write = self._write_buf
                 self._write_buf = b""
                 self._writer.write(to_write)
-            
+
             self._write_event.clear()
-    
+
     async def _response_reader(self):
         # handshake
         greeting = await self._reader.read(IPROTO_GREETING_SIZE)
@@ -246,37 +246,37 @@ class Connection(tarantool.Connection):
                 buf = buf[curr:]
 
         await self._do_close(None)
-    
+
     async def _wait_response(self, sync):
         resp = await self._waiters[sync]
         # renew request waiter
         self._waiters[sync] = asyncio.Future(loop=self.loop)
         return resp
-    
+
     async def _send_request(self, request):
         assert isinstance(request, Request)
 
         if not self.connected:
             await self.connect()
         return (await self._send_request_no_check_connected(request))
-    
+
     async def _send_request_no_check_connected(self, request):
         sync = request.sync
         for attempt in range(RETRY_MAX_ATTEMPTS):
             waiter = self._waiters[sync]
-        
+
             # self._writer.write(bytes(request))
             self._write_buf += bytes(request)
             self._write_event.set()
-        
+
             # read response
             response = await waiter
             if response.completion_status != 1:
                 return response
-        
+
             self._waiters[sync] = asyncio.Future(loop=self.loop)
             warn(response.return_message, RetryWarning)
-    
+
         # Raise an error if the maximum number of attempts have been made
         raise DatabaseError(response.return_code, response.return_message)
 
@@ -284,14 +284,14 @@ class Connection(tarantool.Connection):
         self.req_num += 1
         if self.req_num > 10000000:
             self.req_num = 0
-        
+
         self._waiters[self.req_num] = asyncio.Future(loop=self.loop)
         return self.req_num
-    
+
     async def close(self):
         await self._do_close(None)
-    
-    def _do_close(self, exc):
+
+    async def _do_close(self, exc):
         if not self.connected:
             return
 
@@ -316,12 +316,12 @@ class Connection(tarantool.Connection):
                     waiter.cancel()
                 else:
                     waiter.set_exception(exc)
-            
+
             self._waiters = dict()
-    
+
     def __repr__(self):
         return "aiotarantool.Connection(host=%r, port=%r)" % (self.host, self.port)
-    
+
     async def call(self, func_name, *args):
         assert isinstance(func_name, str)
 
@@ -330,7 +330,7 @@ class Connection(tarantool.Connection):
 
         resp = await self._send_request(RequestCall(self, func_name, args))
         return resp
-    
+
     async def eval(self, expr, *args):
         assert isinstance(expr, str)
 
@@ -339,7 +339,7 @@ class Connection(tarantool.Connection):
 
         resp = await self._send_request(RequestEval(self, expr, args))
         return resp
-    
+
     async def replace(self, space_name, values):
         if isinstance(space_name, str):
             sp = await self.schema.get_space(space_name)
@@ -347,27 +347,27 @@ class Connection(tarantool.Connection):
 
         resp = await self._send_request(RequestReplace(self, space_name, values))
         return resp
-    
+
     async def authenticate(self, user, password):
         self.user = user
         self.password = password
-        
+
         if not self.connected:
             await self.connect()  # connects and authorizes
             return
         else:  # need only to authenticate
             await self._authenticate(user, password)
-    
+
     async def _authenticate(self, user, password):
         assert self._salt, 'Server salt hasn\'t been received.'
         resp = await self._send_request_no_check_connected(RequestAuthenticate(self, self._salt, user, password))
         return resp
-    
+
     async def join(self, server_uuid):
         request = RequestJoin(self, server_uuid)
         resp = await self._send_request(request)
         while True:
-            yield resp
+            await resp
             if resp.code == REQUEST_TYPE_OK or resp.code >= REQUEST_TYPE_ERROR:
                 return
 
@@ -375,13 +375,13 @@ class Connection(tarantool.Connection):
 
         # close connection after JOIN
         await self.close()
-    
+
     async def subscribe(self, cluster_uuid, server_uuid, vclock=None):
         vclock = vclock or dict()
         request = RequestSubscribe(self, cluster_uuid, server_uuid, vclock)
         resp = await self._send_request(request)
         while True:
-            yield resp
+            await resp
             if resp.code >= REQUEST_TYPE_ERROR:
                 return
 
@@ -389,7 +389,7 @@ class Connection(tarantool.Connection):
 
         # close connection after SUBSCRIBE
         await self.close()
-    
+
     async def insert(self, space_name, values):
         if isinstance(space_name, str):
             sp = await self.schema.get_space(space_name)
@@ -397,7 +397,7 @@ class Connection(tarantool.Connection):
 
         res = await self._send_request(RequestInsert(self, space_name, values))
         return res
-    
+
     async def select(self, space_name, key=None, **kwargs):
         offset = kwargs.get("offset", 0)
         limit = kwargs.get("limit", 0xffffffff)
@@ -416,9 +416,9 @@ class Connection(tarantool.Connection):
 
         res = await self._send_request(
             RequestSelect(self, space_name, index_name, key, offset, limit, iterator_type))
-        
+
         return res
-    
+
     async def delete(self, space_name, key, **kwargs):
         index_name = kwargs.get("index", 0)
 
@@ -435,31 +435,31 @@ class Connection(tarantool.Connection):
             RequestDelete(self, space_name, index_name, key))
 
         return res
-    
+
     async def update(self, space_name, key, op_list, **kwargs):
         index_name = kwargs.get("index", 0)
-        
+
         key = check_key(key)
         if isinstance(space_name, str):
             sp = await self.schema.get_space(space_name)
             space_name = sp.sid
-        
+
         if isinstance(index_name, str):
             idx = await self.schema.get_index(space_name, index_name)
             index_name = idx.iid
-        
+
         res = await self._send_request(
             RequestUpdate(self, space_name, index_name, key, op_list))
-        
+
         return res
-    
+
     async def ping(self, notime=False):
         request = RequestPing(self)
         t0 = self.loop.time()
         await self._send_request(request)
         t1 = self.loop.time()
-        
+
         if notime:
             return "Success"
-        
+
         return t1 - t0
