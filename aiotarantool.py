@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.1.0"
+__version__ = "1.1.2"
 
 import asyncio
 import socket
@@ -68,7 +68,7 @@ class Schema(object):
         if not self.con.connected:
             await self.con.connect()
 
-        with (await self.con.lock):
+        async with self.con.lock:
             if space in self.schema:
                 return self.schema[space]
 
@@ -98,7 +98,7 @@ class Schema(object):
         if not self.con.connected:
             await self.con.connect()
 
-        with (await self.con.lock):
+        async with self.con.lock:
             if index in _space.indexes:
                 return _space.indexes[index]
 
@@ -141,7 +141,7 @@ class Connection(tarantool.Connection):
         assert isinstance(self.aiobuffer_size, int)
 
         self.loop = loop or asyncio.get_event_loop()
-        self.lock = asyncio.Semaphore(loop=self.loop)
+        self.lock = asyncio.Lock(loop=self.loop)
         self._reader = None
         self._writer = None
 
@@ -164,7 +164,7 @@ class Connection(tarantool.Connection):
         if self.connected:
             return
 
-        with (await self.lock):
+        async with self.lock:
             if self.connected:
                 return
 
@@ -295,7 +295,7 @@ class Connection(tarantool.Connection):
         if not self.connected:
             return
 
-        with (await self.lock):
+        async with self.lock:
             self.connected = False
             self._writer.transport.close()
             self._reader_task.cancel()
