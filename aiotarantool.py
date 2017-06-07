@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 
 import asyncio
 import socket
@@ -32,14 +32,11 @@ from tarantool.utils import check_key
 
 from tarantool.error import (
     NetworkError,
-    DatabaseError,
-    warn,
-    RetryWarning)
+    DatabaseError)
 
 from tarantool.const import (
     REQUEST_TYPE_OK,
     REQUEST_TYPE_ERROR,
-    RETRY_MAX_ATTEMPTS,
     IPROTO_GREETING_SIZE,
     ENCODING_DEFAULT)
 
@@ -263,23 +260,17 @@ class Connection(tarantool.Connection):
 
     async def _send_request_no_check_connected(self, request):
         sync = request.sync
-        for attempt in range(RETRY_MAX_ATTEMPTS):
+        while True:
             waiter = self._waiters[sync]
-
-            # self._writer.write(bytes(request))
             self._write_buf += bytes(request)
             self._write_event.set()
-
+            
             # read response
             response = await waiter
             if response.completion_status != 1:
                 return response
-
+            
             self._waiters[sync] = asyncio.Future(loop=self.loop)
-            warn(response.return_message, RetryWarning)
-
-        # Raise an error if the maximum number of attempts have been made
-        raise DatabaseError(response.return_code, response.return_message)
 
     def generate_sync(self):
         self.req_num += 1
