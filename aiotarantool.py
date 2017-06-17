@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.1.4"
+__version__ = "1.1.5"
 
 import asyncio
 import socket
@@ -32,13 +32,15 @@ from tarantool.utils import check_key
 
 from tarantool.error import (
     NetworkError,
-    DatabaseError)
+    DatabaseError,
+    SchemaReloadException)
 
 from tarantool.const import (
     REQUEST_TYPE_OK,
     REQUEST_TYPE_ERROR,
     IPROTO_GREETING_SIZE,
-    ENCODING_DEFAULT)
+    ENCODING_DEFAULT,
+    IPROTO_SYNC)
 
 
 import logging
@@ -157,6 +159,7 @@ class Connection(tarantool.Connection):
 
         self.error = False  # important not raise exception in response reader
         self.schema = Schema(self)  # need schema with lock
+        self.schema_version = 1
 
     async def connect(self):
         if self.connected:
@@ -222,8 +225,27 @@ class Connection(tarantool.Connection):
 
                 body = buf[curr + 5:curr + 5 + length]
                 curr += 5 + length
+                try:
+                    response = Response(self, body)  # unpack response
+                except SchemaReloadException as exp:
+                    if self.encoding is not None:
+                        unpacker = msgpack.Unpacker(use_list=True, encoding=self.encoding)
+                    else:
+                        unpacker = msgpack.Unpacker(use_list=True)
+                    
+                    unpacker.feed(body)
+                    header = unpacker.unpack()
+                    sync = header.get(IPROTO_SYNC, 0)
 
-                response = Response(self, body)  # unpack response
+                    waiter = self._waiters[sync]
+                    if not waiter.cancelled():
+                        waiter.set_exception(exp)
+
+                    del self._waiters[sync]
+                    
+                    self.schema.flush()
+                    self.schema_version = exp.schema_version
+                    continue
 
                 sync = response.sync
                 if sync not in self._waiters:
@@ -259,18 +281,21 @@ class Connection(tarantool.Connection):
         return (await self._send_request_no_check_connected(request))
 
     async def _send_request_no_check_connected(self, request):
-        sync = request.sync
         while True:
+            request_bytes = bytes(request)
+            sync = request.sync
             waiter = self._waiters[sync]
-            self._write_buf += bytes(request)
+            
+            self._write_buf += request_bytes
             self._write_event.set()
             
             # read response
-            response = await waiter
-            if response.completion_status != 1:
-                return response
+            try:
+                response = await waiter
+            except SchemaReloadException:
+                continue
             
-            self._waiters[sync] = asyncio.Future(loop=self.loop)
+            return response
 
     def generate_sync(self):
         self.req_num += 1
