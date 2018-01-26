@@ -39,8 +39,12 @@ from tarantool.const import (
     REQUEST_TYPE_OK,
     REQUEST_TYPE_ERROR,
     IPROTO_GREETING_SIZE,
-    ENCODING_DEFAULT,
     IPROTO_SYNC)
+
+try
+    from tarantool.const import ENCODING_DEFAULT
+except ImportError:
+    from tarantool.utils import ENCODING_DEFAULT
 
 
 import logging
@@ -345,7 +349,19 @@ class Connection(tarantool.Connection):
         if len(args) == 1 and isinstance(args[0], (list, tuple)):
             args = args[0]
 
-        resp = await self._send_request(RequestCall(self, func_name, args))
+        co_varnames = RequestCall.__init__.__code__.co_varnames
+        params = {
+            "conn": self,
+            "name": func_name,
+            "args": args,
+        }
+
+        if "call16" in co_varnames:
+            # tarantool-python >= 0.6.1
+            #
+            params["call16"] = None
+
+        resp = await self._send_request(RequestCall(**params))
         return resp
 
     async def eval(self, expr, *args):
