@@ -41,7 +41,7 @@ from tarantool.const import (
     IPROTO_GREETING_SIZE,
     IPROTO_SYNC)
 
-try
+try:
     from tarantool.const import ENCODING_DEFAULT
 except ImportError:
     from tarantool.utils import ENCODING_DEFAULT
