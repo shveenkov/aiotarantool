@@ -356,10 +356,10 @@ class Connection(tarantool.Connection):
             "args": args,
         }
 
-        if "call16" in co_varnames:
+        if "call_16" in co_varnames:
             # tarantool-python >= 0.6.1
             #
-            params["call16"] = None
+            params["call_16"] = None
 
         resp = await self._send_request(RequestCall(**params))
         return resp
