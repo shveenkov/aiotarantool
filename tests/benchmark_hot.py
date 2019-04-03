@@ -20,35 +20,31 @@ class Bench(object):
 
         self.iter_max = 10000
 
-    @asyncio.coroutine
-    def insert_job(self):
+    async def insert_job(self):
         for it in range(self.iter_max):
             try:
-                yield from self.tnt.insert("tester", (it, self.data[it % self.mod_len]))
+                await self.tnt.insert("tester", (it, self.data[it % self.mod_len]))
                 self.cnt_i += 1
             except self.tnt.DatabaseError:
                 pass
 
-    @asyncio.coroutine
-    def select_job(self):
+    async def select_job(self):
         for it in range(self.iter_max):
-            rs = yield from self.tnt.select("tester", it)
+            rs = await self.tnt.select("tester", it)
             if len(rs):
                 self.cnt_s += 1
 
-    @asyncio.coroutine
-    def update_job(self):
+    async def update_job(self):
         for it in range(self.iter_max):
             try:
-                yield from self.tnt.update("tester", it, [("=", 2, it)])
+                await self.tnt.update("tester", it, [("=", 2, it)])
                 self.cnt_u += 1
             except self.tnt.DatabaseError:
                 pass
 
-    @asyncio.coroutine
-    def delete_job(self):
+    async def delete_job(self):
         for it in range(0, self.iter_max, 2):
-            rs = yield from self.tnt.delete("tester", it)
+            rs = await self.tnt.delete("tester", it)
             if len(rs):
                 self.cnt_d += 1
 

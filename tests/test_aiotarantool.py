@@ -14,21 +14,19 @@ data = [string.printable[it] * 1536 for it in range(mod_len)]
 cnt = 0
 
 
-@asyncio.coroutine
-def insert_job(tnt):
+async def insert_job(tnt):
     global cnt
 
     for it in range(2500):
         cnt += 1
-        r = yield from tnt.insert("tester", (cnt, data[it % mod_len]))
+        r = await tnt.insert("tester", (cnt, data[it % mod_len]))
 
-@asyncio.coroutine
-def delete_job(tnt):
+async def delete_job(tnt):
     global cnt
 
     for it in range(2500):
         cnt += 1
-        r = yield from tnt.delete("tester", cnt)
+        r = await tnt.delete("tester", cnt)
 
 loop = asyncio.get_event_loop()
 

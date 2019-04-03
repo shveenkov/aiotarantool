@@ -59,40 +59,36 @@ import asyncio
 import aiotarantool
 
 
-@asyncio.coroutine
-def insert_job(tnt):
+async def insert_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.insert("tester", (cnt, data[cnt % mod_len]))
+        await tnt.insert("tester", (cnt, data[cnt % mod_len]))
 
 
-@asyncio.coroutine
-def select_job(tnt):
+async def select_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.select("tester", cnt)
+        await tnt.select("tester", cnt)
 
 
-@asyncio.coroutine
-def update_job(tnt):
+async def update_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.update("tester", cnt, [("=", 2, cnt)])
+        await tnt.update("tester", cnt, [("=", 2, cnt)])
 
 
-@asyncio.coroutine
-def delete_job(tnt):
+async def delete_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.delete("tester", cnt)
+        await tnt.delete("tester", cnt)
 
 
 loop = asyncio.get_event_loop()
