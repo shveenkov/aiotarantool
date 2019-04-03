@@ -55,16 +55,16 @@ def target_bench(loop):
     bench = Bench(tnt)
 
     tasks = []
-    tasks += [asyncio.async(bench.insert_job())
+    tasks += [loop.create_task(bench.insert_job())
               for _ in range(20)]
 
-    tasks += [asyncio.async(bench.select_job())
+    tasks += [loop.create_task(bench.select_job())
               for _ in range(20)]
 
-    tasks += [asyncio.async(bench.update_job())
+    tasks += [loop.create_task(bench.update_job())
               for _ in range(20)]
 
-    tasks += [asyncio.async(bench.delete_job())
+    tasks += [loop.create_task(bench.delete_job())
               for _ in range(20)]
 
     t1 = loop.time()

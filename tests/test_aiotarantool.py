@@ -33,7 +33,7 @@ loop = asyncio.get_event_loop()
 # create tnt instance, not real connect
 tnt = aiotarantool.connect("127.0.0.1", 3301)
 
-tasks = [asyncio.async(delete_job(tnt))
+tasks = [loop.create_task(delete_job(tnt))
          for _ in range(40)]
 
 t1 = loop.time()
