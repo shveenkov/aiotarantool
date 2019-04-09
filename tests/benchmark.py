@@ -59,40 +59,36 @@ import asyncio
 import aiotarantool
 
 
-@asyncio.coroutine
-def insert_job(tnt):
+async def insert_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.insert("tester", (cnt, data[cnt % mod_len]))
+        await tnt.insert("tester", (cnt, data[cnt % mod_len]))
 
 
-@asyncio.coroutine
-def select_job(tnt):
+async def select_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.select("tester", cnt)
+        await tnt.select("tester", cnt)
 
 
-@asyncio.coroutine
-def update_job(tnt):
+async def update_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.update("tester", cnt, [("=", 2, cnt)])
+        await tnt.update("tester", cnt, [("=", 2, cnt)])
 
 
-@asyncio.coroutine
-def delete_job(tnt):
+async def delete_job(tnt):
     global cnt
 
     for i in range(2500):
         cnt += 1
-        yield from tnt.delete("tester", cnt)
+        await tnt.delete("tester", cnt)
 
 
 loop = asyncio.get_event_loop()
@@ -103,7 +99,7 @@ tnt = aiotarantool.connect("127.0.0.1", 3301)
 print("aiotarantool insert test")
 t1 = loop.time()
 cnt = 0
-tasks = [asyncio.async(insert_job(tnt))
+tasks = [loop.create_task(insert_job(tnt))
          for _ in range(40)]
 
 loop.run_until_complete(asyncio.wait(tasks))
@@ -114,7 +110,7 @@ benchmark["aiotarantool"]["insert"] = t2 - t1
 print("aiotarantool select test")
 t1 = loop.time()
 cnt = 0
-tasks = [asyncio.async(select_job(tnt))
+tasks = [loop.create_task(select_job(tnt))
          for _ in range(40)]
 
 loop.run_until_complete(asyncio.wait(tasks))
@@ -125,7 +121,7 @@ benchmark["aiotarantool"]["select"] = t2 - t1
 print("aiotarantool update test")
 t1 = loop.time()
 cnt = 0
-tasks = [asyncio.async(update_job(tnt))
+tasks = [loop.create_task(update_job(tnt))
          for _ in range(40)]
 
 loop.run_until_complete(asyncio.wait(tasks))
@@ -136,7 +132,7 @@ benchmark["aiotarantool"]["update"] = t2 - t1
 print("aiotarantool delete test")
 t1 = loop.time()
 cnt = 0
-tasks = [asyncio.async(delete_job(tnt))
+tasks = [loop.create_task(delete_job(tnt))
          for _ in range(40)]
 
 loop.run_until_complete(asyncio.wait(tasks))
