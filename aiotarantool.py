@@ -52,8 +52,8 @@ import logging
 logger = logging.getLogger(__package__)
 
 
-def connect(host, port, user=None, password=None, loop=None, encoding=ENCODING_DEFAULT):
-    conn = Connection(host, port, user=user, password=password, loop=loop, encoding=encoding)
+def connect(host, port, user=None, password=None, loop=None, encoding=ENCODING_DEFAULT, **kwargs):
+    conn = Connection(host, port, user=user, password=password, loop=loop, encoding=encoding, **kwargs)
 
     return conn
 
@@ -132,14 +132,14 @@ class Connection(tarantool.Connection):
     DatabaseError = DatabaseError
 
     def __init__(self, host, port, user=None, password=None, connect_now=False, loop=None,
-                 encoding=ENCODING_DEFAULT, aiobuffer_size=16384):
+                 encoding=ENCODING_DEFAULT, aiobuffer_size=16384, **kwargs):
         """just create instance, do not really connect by default"""
 
         super().__init__(host, port,
                          user=user,
                          password=password,
                          connect_now=connect_now,
-                         encoding=encoding)
+                         encoding=encoding, **kwargs)
 
         self.aiobuffer_size = aiobuffer_size
         assert isinstance(self.aiobuffer_size, int)
